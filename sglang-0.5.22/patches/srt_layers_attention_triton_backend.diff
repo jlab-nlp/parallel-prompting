@@ -1,0 +1,30 @@
+--- a/python/sglang/srt/layers/attention/triton_backend.py
++++ b/python/sglang/srt/layers/attention/triton_backend.py
+@@ -140,6 +140,10 @@
+     lean_Lp: Optional[torch.Tensor] = None
+     lean_Op: Optional[torch.Tensor] = None
+     lean_locks: Optional[torch.Tensor] = None
++    # Parallel Prompting stream ids (see parallel_prompt/engine.py): of every
++    # extend token, and of every KV-pool slot. Set together or not at all.
++    q_sid: Optional[torch.Tensor] = None
++    slot_sid: Optional[torch.Tensor] = None
+ 
+ 
+ class TritonAttnBackend(AttentionBackend):
+@@ -1836,9 +1840,16 @@
+             score_mod=score_mod,
+             aux_tensors=aux_tensors,
+             extend_seq_lens_cpu=forward_batch.extend_seq_lens_cpu,
++            **self._stream_id_kwargs(),
+         )
+         return o
+ 
++    def _stream_id_kwargs(self):
++        md = self.forward_metadata
++        if md.q_sid is None:
++            return {}
++        return {"q_sid": md.q_sid, "slot_sid": md.slot_sid}
++
+     def _forward_extend_kernel(self, layer, *args, **kwargs):
+         if self.dllm_attention is not None:
+             return self.dllm_attention.forward_extend(layer, *args, **kwargs)

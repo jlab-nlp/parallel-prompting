@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Read Once, Answer Many: Parallel Prompting for Shared-Context LLM Inference</title>
+<meta name="description" content="Parallel Prompting decodes many questions about one document as streams of a single request, so each decode step reads the document's KV cache once. 3.7–6.0× faster than stock SGLang.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2318181b'/><path d='M7 9h18M7 16h18M7 23h18' stroke='white' stroke-width='3' stroke-linecap='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #27272a;
+    --muted: #52525b;
+    --faint: #71717a;
+    --line: #e4e4e7;
+    --panel: #f4f4f5;
+    --link: #3b82f6;
+    --accent: #2563eb;
+    --pill-bg: #27272a;
+    --pill-fg: #ffffff;
+    --pill-hover: #000000;
+    --win: #dcfce7;
+    --win-fg: #166534;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #18181b;
+      --fg: #e4e4e7;
+      --muted: #a1a1aa;
+      --faint: #a1a1aa;
+      --line: #3f3f46;
+      --panel: #27272a;
+      --link: #93c5fd;
+      --accent: #93c5fd;
+      --pill-bg: #e4e4e7;
+      --pill-fg: #18181b;
+      --pill-hover: #fafafa;
+      --win: #14532d;
+      --win-fg: #bbf7d0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #18181b; --fg: #e4e4e7; --muted: #a1a1aa; --faint: #a1a1aa; --line: #3f3f46;
+    --panel: #27272a; --link: #93c5fd; --accent: #93c5fd; --pill-bg: #e4e4e7; --pill-fg: #18181b;
+    --pill-hover: #fafafa; --win: #14532d; --win-fg: #bbf7d0;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.7;
+  }
+  main { max-width: 50rem; margin: 0 auto; padding: 4rem 1rem 3rem; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  header { text-align: center; }
+  h1 { font-size: clamp(1.9rem, 5vw, 2.9rem); font-weight: 500; line-height: 1.2; margin: 0 0 1.75rem; letter-spacing: -0.01em; }
+  h1 .sub { display: block; font-size: 0.62em; color: var(--muted); margin-top: 0.4rem; }
+  .authors { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem 2.5rem; margin-bottom: 0.4rem; font-size: 1.1rem; }
+  .affil { color: var(--muted); font-size: 0.95rem; margin-bottom: 1.5rem; }
+  .pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--pill-bg); color: var(--pill-fg);
+    border-radius: 999px; padding: 0.45rem 1.2rem; font-size: 1.05rem;
+  }
+  .pill:hover { background: var(--pill-hover); text-decoration: none; }
+  .pill svg { width: 1.1em; height: 1.1em; fill: currentColor; }
+
+  figure { margin: 2.5rem 0; }
+  figure img { display: block; width: 100%; height: auto; background: #fff; border-radius: 0.5rem; padding: 0.5rem; }
+  figure.narrow img { max-width: 34rem; margin: 0 auto; }
+  figcaption { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-top: 0.85rem; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 640px) { .two { grid-template-columns: 1fr; } }
+
+  h2 { font-size: 1.6rem; font-weight: 600; text-align: center; margin: 3.5rem 0 1.25rem; }
+  h3 { font-size: 1.2rem; font-weight: 600; margin: 2rem 0 0.6rem; }
+  p { margin: 0 0 1.1rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin: 2.5rem 0 0; }
+  @media (max-width: 640px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat { background: var(--panel); border-radius: 0.6rem; padding: 1rem 0.75rem; text-align: center; }
+  .stat b { display: block; font-size: 1.75rem; font-weight: 600; line-height: 1.2; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .stat span { display: block; font-size: 0.85rem; color: var(--muted); line-height: 1.4; margin-top: 0.3rem; }
+
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 0 0 1.25rem; }
+  .steps li { counter-increment: s; position: relative; padding-left: 2.4rem; margin-bottom: 0.9rem; }
+  .steps li::before {
+    content: counter(s); position: absolute; left: 0; top: 0.15rem;
+    width: 1.6rem; height: 1.6rem; border-radius: 50%;
+    background: var(--pill-bg); color: var(--pill-fg);
+    font-size: 0.85rem; font-weight: 600; display: grid; place-items: center;
+  }
+
+  .table-wrap { overflow-x: auto; margin: 1rem 0 0.5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+  th, td { padding: 0.45rem 0.7rem; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { font-weight: 600; border-bottom: 2px solid var(--fg); }
+  tr.ours td { font-weight: 600; }
+  td.win { background: var(--win); color: var(--win-fg); }
+  .note { font-size: 0.9rem; color: var(--muted); }
+
+  code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.85rem; }
+  :not(pre) > code { background: var(--panel); padding: 0.1rem 0.4rem; border-radius: 0.3rem; }
+  pre { background: var(--panel); border-radius: 0.5rem; padding: 1rem 1.1rem; overflow-x: auto; line-height: 1.55; margin: 0.5rem 0 1.25rem; }
+  .bib { position: relative; }
+  .copy {
+    position: absolute; top: 0.5rem; right: 0.5rem; border: 1px solid var(--line);
+    background: var(--bg); color: var(--fg); border-radius: 0.4rem; padding: 0.2rem 0.6rem;
+    font: inherit; font-size: 0.8rem; cursor: pointer;
+  }
+  ul.plain { padding-left: 1.2rem; }
+  ul.plain li { margin-bottom: 0.5rem; }
+  footer { text-align: center; color: var(--faint); font-size: 0.85rem; margin-top: 4rem; }
+
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>Read Once, Answer Many<span class="sub">Parallel Prompting for Shared-Context LLM Inference</span></h1>
+  <div class="authors">
+    <span>Zekun Zhao</span>
+    <span>Jeffrey Flanigan</span>
+  </div>
+  <div class="affil">University of California, Santa Cruz</div>
+  <div class="pills">
+    <a class="pill" href="#" id="paper-link">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V8h4.5L14 3.5zM7 12h10v1.6H7zm0 3.5h10v1.6H7zm0-7h5v1.6H7z"/></svg>
+      Paper
+    </a>
+    <a class="pill" href="https://github.com/jlab-nlp/parallel-prompting">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
+      Code
+    </a>
+  </div>
+</header>
+
+<figure>
+  <img src="assets/overview_v3.png" alt="Three ways to answer several questions about one document: batched requests read the document once per question per step; batch prompting reads it once but answers attend to each other; Parallel Prompting reads it once per step for all streams and keeps answers independent with a stream mask.">
+  <figcaption>Three ways to answer several questions about one document, at one decode step. <b>Batched requests</b> share the document's KV cache but still read it once per question per step. <b>Batch prompting</b> reads it once, but later answers attend to earlier ones. <b>Parallel Prompting</b> decodes the questions as streams of one request: each step reads the document once for all of them, and a stream mask keeps every answer independent.</figcaption>
+</figure>
+
+<div class="stats">
+  <div class="stat"><b>3.7&times;</b><span>faster than stock SGLang (FlashInfer) on an A100</span></div>
+  <div class="stat"><b>5.9&ndash;6.0&times;</b><span>faster on an RTX&nbsp;A6000</span></div>
+  <div class="stat"><b>144 / 144</b><span>paired runs won, 2 GPUs &times; 2 SGLang releases</span></div>
+  <div class="stat"><b>~80</b><span>lines changed in existing SGLang files</span></div>
+</div>
+<p class="note" style="text-align:center;margin-top:0.75rem">CodeLlama-7B, 8k&ndash;16k-token documents, 64&ndash;256 questions per document, 128 output tokens.</p>
+
+
+<h2>Abstract</h2>
+<p>LLM workloads sometimes ask many independent questions about the same long document, as in document QA, data labeling and LLM-based evaluation. Prefix caching removes the redundant prefill shared by these queries, but each decode step still reads the document's key&ndash;value (KV) cache once per question, so decoding is bound by memory bandwidth and scales with the number of questions.</p>
+<p>We present <em>Parallel Prompting</em>, which decodes <i>P</i> questions as <i>P</i> independent streams of a single request. Every step reads the shared document once for all <i>P</i> streams, and a stream-id attention mask, evaluated inside the attention kernel, keeps each answer conditioned only on the document and its own question. We implement it in SGLang by adding about 80 lines to three existing files and a small engine package; the mask needs no dense tensor, and every decode step has a fixed shape that is captured as a CUDA graph.</p>
+<p>With CodeLlama-7B, 8k&ndash;16k-token documents and 64&ndash;256 questions per document, Parallel Prompting is <b>3.7&times; faster</b> than stock SGLang with its FlashInfer backend on an A100 and <b>5.9&ndash;6.0&times; faster</b> on an RTX A6000, on two SGLang releases. Timed on identical inputs, it is faster than stock SGLang in all 144 runs.</p>
+
+<h2>How it works</h2>
+<p>Stock serving engines already store a shared document's KV cache once. But each question is still its own request, so every decode step of every question reads the whole document again: <i>Q</i> questions mean <i>Q</i> reads of the document per step. Parallel Prompting puts <i>P</i> questions into one request and makes two small changes so that each answer is the same as decoding its question alone:</p>
+<ol class="steps">
+  <li><b>A stream mask.</b> Every KV slot carries a stream id (&minus;1 for the document). A token of stream <i>s</i> may attend only to the document and to earlier tokens of stream <i>s</i>. The rule is ANDed into the existing causal mask inside SGLang's Triton attention kernel, so no dense mask is ever built.</li>
+  <li><b>Shared positions.</b> Every stream's positions start right after the document, as if its question were the only one.</li>
+</ol>
+<p>Each decode step appends one token per stream and has a fixed shape, so it is captured once as a CUDA graph. The document's KV is read once per request per step, which turns <i>P</i> matrix&ndash;vector attention products into one matrix&ndash;matrix product.</p>
+<figure class="narrow">
+  <img src="assets/stream_mask.png" alt="The in-kernel stream mask at one decode step for a 3-token document and 3 streams." loading="lazy">
+  <figcaption>The in-kernel mask at one decode step: a 3-token document, <i>P</i>&nbsp;=&nbsp;3 streams. The new token of stream 1 attends only to the document and to stream 1's own slots.</figcaption>
+</figure>
+
+<h2>Results</h2>
+
+<h3>Faster than stock SGLang on every setting</h3>
+<figure class="narrow">
+  <img src="assets/fig1_portability.png" alt="Bar chart of Parallel Prompting's speedup over stock SGLang on two GPUs and two SGLang releases." loading="lazy">
+  <figcaption>Speedup over stock SGLang on 8k/16k-token documents with 64&ndash;256 questions. Error bars are 95% bootstrap CIs over 36 paired runs per setting.</figcaption>
+</figure>
+<p>Wall time to answer all <i>Q</i> questions about one cached document (SGLang v0.4.2, A100-80GB, CUDA graphs on for every configuration):</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Document</th><th><i>Q</i></th><th>FlashInfer</th><th>Triton</th><th>Parallel Prompting</th><th>Speedup</th></tr></thead>
+  <tbody>
+    <tr><td>8k tokens</td><td>64</td><td>9.76 s</td><td>18.19 s</td><td>3.54 s</td><td>2.72&times;</td></tr>
+    <tr><td>8k tokens</td><td>128</td><td>16.19 s</td><td>34.44 s</td><td>4.66 s</td><td>3.47&times;</td></tr>
+    <tr><td>8k tokens</td><td>256</td><td>32.26 s</td><td>68.07 s</td><td>8.30 s</td><td>3.89&times;</td></tr>
+    <tr><td>16k tokens</td><td>64</td><td>16.17 s</td><td>32.61 s</td><td>5.29 s</td><td>3.06&times;</td></tr>
+    <tr><td>16k tokens</td><td>128</td><td>30.61 s</td><td>63.55 s</td><td>6.80 s</td><td>4.50&times;</td></tr>
+    <tr><td>16k tokens</td><td>256</td><td>59.99 s</td><td>126.15 s</td><td>12.31 s</td><td>4.87&times;</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">Speedup is over the faster stock configuration (mean of 6 seeds).</p>
+
+<h3>When it helps most</h3>
+<div class="two">
+  <figure style="margin:1rem 0">
+    <img src="assets/fig2_scaling.png" alt="Speedup grows with document length and number of questions." loading="lazy">
+    <figcaption><b>Longer documents and more questions</b> mean a bigger gain: from about 1&times; at 512 tokens with 16 questions to 5&ndash;6&times; at 8k&ndash;16k tokens with 256.</figcaption>
+  </figure>
+  <figure style="margin:1rem 0">
+    <img src="assets/fig3_outlen.png" alt="Speedup falls as answers get longer." loading="lazy">
+    <figcaption><b>Short answers</b> help: the gain falls to about 2&times; at 1,024 output tokens, because each stream also scans its sibling streams' answers.</figcaption>
+  </figure>
+</div>
+<figure class="narrow">
+  <img src="assets/fig4_parallel_size.png" alt="Wall time is U-shaped in the number of streams per request P." loading="lazy">
+  <figcaption><b>The number of streams per request <i>P</i> needs little tuning:</b> wall time is U-shaped, with its minimum at <i>P</i>&nbsp;=&nbsp;16&ndash;64 on every setting.</figcaption>
+</figure>
+
+<h3>Real benchmarks</h3>
+<p>The whole benchmark, timed from an empty cache including document prefill (Qwen2.5-7B-Instruct, SGLang v0.5.22, A100-80GB, radix prefix cache on for every configuration):</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Configuration</th><th>QuALITY time</th><th>Accuracy</th><th>LooGLE time</th><th>Recall</th></tr></thead>
+  <tbody>
+    <tr><td>Stock SGLang, FlashInfer</td><td>133.2 s</td><td>76.13</td><td class="win">403.6 s</td><td>83.41</td></tr>
+    <tr><td>Stock SGLang, Triton</td><td>155.9 s</td><td>76.22</td><td>568.0 s</td><td>83.77</td></tr>
+    <tr class="ours"><td>Parallel Prompting</td><td class="win">73.6 s</td><td>75.89</td><td>508.3 s</td><td>83.61</td></tr>
+  </tbody>
+</table>
+</div>
+<p>On QuALITY, whose answers are short, Parallel Prompting answers all 2,086 questions <b>1.81&times; faster</b> than the fastest stock setup. On LooGLE, whose answers average 234 tokens on 20k-token documents, it beats stock Triton (the same attention kernels) by 1.12&times; but is slower than stock FlashInfer, which Parallel Prompting does not use yet.</p>
+
+<h3>Same answers</h3>
+<p>Accuracy and token recall agree within 0.33 points on QuALITY and 0.36 on LooGLE. On SQuAD v1.1 (10,570 questions, CodeLlama-7B, RTX A6000), Parallel Prompting matches both stock backends &mdash; every paired 95% confidence interval on the F1 difference contains zero &mdash; while generating the answers <b>1.71&times; faster</b>.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Configuration</th><th>EM</th><th>F1</th><th>&Delta;F1 [95% CI]</th><th>Answer time</th></tr></thead>
+  <tbody>
+    <tr class="ours"><td>Parallel Prompting (<i>P</i>&nbsp;=&nbsp;32)</td><td>21.51</td><td>45.14</td><td>&ndash;</td><td class="win">237.6 s</td></tr>
+    <tr><td>Stock SGLang, FlashInfer</td><td>21.50</td><td>45.25</td><td>&minus;0.11 [&minus;0.25, 0.03]</td><td>406.5 s</td></tr>
+    <tr><td>Stock SGLang, Triton</td><td>21.55</td><td>45.18</td><td>&minus;0.04 [&minus;0.20, 0.12]</td><td>409.2 s</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Use the code</h2>
+<p>Parallel Prompting is an overlay on stock SGLang for <b>v0.5.22</b> and <b>v0.4.2.post3</b>. Only six files differ from SGLang: three new, three edited. Start from the official SGLang Docker image and copy the overlay on:</p>
+<pre><code>git clone https://github.com/jlab-nlp/parallel-prompting.git &amp;&amp; cd parallel-prompting
+docker run --gpus all -it --shm-size 8g -v $PWD:/work -w /work lmsysorg/sglang:v0.5.22 bash
+bash install.sh 0.5.22        # refuses to overwrite files that are not stock SGLang</code></pre>
+<p>Check it and see the speedup on your GPU:</p>
+<pre><code>cd sglang-0.5.22
+python3 pp_bench/test_mask.py                  # CPU: layout vs. reference mask
+python3 pp_bench/check_kernel.py               # GPU: kernel vs. PyTorch attention
+python3 pp_bench/demo_gen.py --doc-tokens 12000 --num-questions 256 \
+    --answer-tokens 32 --parallel-size 32 --cuda-graph --compare</code></pre>
+<p>Or call the engine from Python:</p>
+<pre><code>from sglang.srt.server_args import ServerArgs
+from sglang.srt.parallel_prompt.engine import ParallelPromptEngine
+
+args = ServerArgs(model_path="codellama/CodeLlama-7b-Instruct-hf",
+                  attention_backend="triton", sampling_backend="pytorch",
+                  disable_cuda_graph=True, disable_radix_cache=True)
+engine = ParallelPromptEngine(args, cuda_graph=True)
+tok = engine.tokenizer
+
+doc = tok.encode("Read the passage and answer briefly.\n\nPassage:\n...\n\n")
+qs = [tok.encode(q, add_special_tokens=False)
+      for q in ["Question: Who ...?\nAnswer:", "Question: When ...?\nAnswer:"]]
+
+out = engine.generate([doc], [qs], max_new_tokens=64,
+                      stop_token_ids=engine.default_stop_ids(), parallel_size=2)
+print([tok.decode(a) for a in out[0]])   # out[document][question] -&gt; token ids</code></pre>
+
+<h3>Good fit</h3>
+<ul class="plain">
+  <li>Many questions, labels or evaluation prompts over the same long document, run as an offline batch.</li>
+  <li>Short to medium answers. The gain shrinks as answers get longer.</li>
+  <li>A single GPU with the Triton attention backend and greedy decoding, which is what the engine supports today.</li>
+</ul>
+
+<h2>BibTeX</h2>
+<div class="bib">
+<button class="copy" type="button" data-target="bibtex">Copy</button>
+<pre id="bibtex"><code>@misc{zhao2026readonce,
+  title  = {Read Once, Answer Many: Parallel Prompting for Shared-Context {LLM} Inference},
+  author = {Zekun Zhao and Jeffrey Flanigan},
+  year   = {2026},
+}</code></pre>
+</div>
+
+<footer>University of California, Santa Cruz &middot; JLab NLP</footer>
+</main>
+<script>
+  document.querySelectorAll(".copy").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var t = document.getElementById(b.dataset.target).innerText;
+      try {
+        navigator.clipboard.writeText(t).then(function () {
+          b.textContent = "Copied";
+          setTimeout(function () { b.textContent = "Copy"; }, 1500);
+        });
+      } catch (e) {}
+    });
+  });
+</script>
+</body>
+</html>

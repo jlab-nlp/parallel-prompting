@@ -1,0 +1,129 @@
+--- a/python/sglang/kernels/ops/attention/extend_attention.py
++++ b/python/sglang/kernels/ops/attention/extend_attention.py
+@@ -45,6 +45,11 @@
+     _triton_version_parts = (0, 0)
+ _is_triton_ge_37 = _triton_version_parts >= (3, 7)
+ 
++# Parallel Prompting only: (min BLOCK_M, BLOCK_N, num_warps) for stream-id
++# extends of <= 64 tokens per request; None keeps the default tiles. Tuned on
++# 0.4.2.post3 with pp_bench/kernel_bench.py.
++SMALL_EXTEND_CONFIG = (16, 128, 4)
++
+ 
+ def _get_block_sizes_for_extend_attention(Lq: int, Lv: int):
+     """
+@@ -389,6 +394,8 @@
+     mask_indptr,
+     sink_ptr,
+     window_kv_offset_ptr,
++    q_sid_ptr,
++    slot_sid_ptr,
+     sm_scale,
+     k_scale,
+     v_scale,
+@@ -427,6 +434,7 @@
+     USE_CUSTOM_MASK: tl.constexpr,
+     IS_CAUSAL: tl.constexpr,
+     SKIP_PREFIX_CUSTOM_MASK: tl.constexpr,
++    USE_STREAM_IDS: tl.constexpr,
+     STORE_LSE: tl.constexpr,
+     SKIP_PREFIX: tl.constexpr,
+     SKIP_EXTEND: tl.constexpr,
+@@ -503,6 +511,15 @@
+     mask_d = offs_d < Lq
+     mask_dv = offs_dv < Lv
+ 
++    if USE_STREAM_IDS:
++        # Parallel Prompting: key k is visible to query q iff k belongs to the
++        # document (stream -1) or to q's own stream (plus causality in stage 2).
++        sid_q = tl.load(
++            q_sid_ptr + cur_seq_extend_start_idx + cur_block_m * BLOCK_M + offs_m,
++            mask=mask_m,
++            other=-3,
++        )
++
+     if xai_temperature_len > 0:
+         offs_qidx = cur_seq_len_prefix + cur_block_m * BLOCK_M + offs_m
+         xai_temperature_scale = 1.0 / tl.log2(float(xai_temperature_len))
+@@ -651,6 +668,12 @@
+             if xai_temperature_len > 0:
+                 qk *= xai_temperature_reg[:, None]
+ 
++            if USE_STREAM_IDS:
++                sid_k = tl.load(slot_sid_ptr + offs_kv_loc, mask=mask_n, other=-2)
++                final_mask &= (sid_k[None, :] == -1) | (
++                    sid_k[None, :] == sid_q[:, None]
++                )
++
+             if SCORE_MOD is not None:
+                 qk = SCORE_MOD(
+                     qk,
+@@ -756,6 +779,15 @@
+                 start_n + offs_n[None, :]
+             )
+             mask_causual &= mask_m[:, None] & mask_n[None, :]
++            if USE_STREAM_IDS:
++                sid_k = tl.load(
++                    q_sid_ptr + cur_seq_extend_start_idx + start_n + offs_n,
++                    mask=mask_n,
++                    other=-2,
++                )
++                mask_causual &= (sid_k[None, :] == -1) | (
++                    sid_k[None, :] == sid_q[:, None]
++                )
+             final_mask &= mask_causual
+         else:
+             mask_non_causal = mask_m[:, None] & mask_n[None, :]
+@@ -943,6 +975,8 @@
+     aux_tensors=None,
+     extend_seq_lens_cpu=None,
+     identity_kv_indices: bool = False,
++    q_sid=None,
++    slot_sid=None,
+ ):
+     """
+     q_extend, k_extend, v_extend, o_extend: contiguous tensors
+@@ -957,6 +991,9 @@
+     see triton_ops/score_mod.py for the contract.
+     ``identity_kv_indices`` promises that the prefix buffer is densely packed,
+     allowing direct addressing instead of loading an index for every token.
++    ``q_sid`` / ``slot_sid``: optional Parallel Prompting stream ids (int32) of
++    every extend token and of every KV-pool slot. Used in place of a dense
++    custom mask; the mask is computed in the kernel, with fixed-size inputs.
+     """
+     Lq, Lk, Lv = (
+         q_extend.shape[-1],
+@@ -1016,6 +1053,16 @@
+     USE_CUSTOM_MASK = custom_mask is not None
+     # Skip custom mask for prefix part
+     SKIP_PREFIX_CUSTOM_MASK = skip_prefix_custom_mask
++    USE_STREAM_IDS = q_sid is not None
++    if USE_STREAM_IDS:
++        assert not USE_CUSTOM_MASK and is_causal and page_size == 1
++        assert sliding_window_size <= 0 and not use_fp8_zero_prefix
++        if SMALL_EXTEND_CONFIG is not None and max_len_extend <= 64 and not _is_hip:
++            # Parallel Prompting decode steps extend each request by only a
++            # few tokens (one per stream); a 64/128-row query tile would be
++            # mostly padding, so size the tile to the extend length.
++            m, BLOCK_N, num_warps = SMALL_EXTEND_CONFIG
++            BLOCK_M = max(m, triton.next_power_of_2(max_len_extend))
+ 
+     HAS_SINK = sinks is not None
+     USE_FP8_PREFIX = (
+@@ -1106,6 +1153,8 @@
+         mask_indptr,
+         sinks,
+         window_kv_offsets,
++        q_sid,
++        slot_sid,
+         sm_scale,
+         k_scale,
+         v_scale,
+@@ -1143,6 +1192,7 @@
+         USE_CUSTOM_MASK=USE_CUSTOM_MASK,
+         IS_CAUSAL=is_causal,
+         SKIP_PREFIX_CUSTOM_MASK=SKIP_PREFIX_CUSTOM_MASK,
++        USE_STREAM_IDS=USE_STREAM_IDS,
+         STORE_LSE=STORE_LSE,
+         SKIP_PREFIX=skip_prefix,
+         SKIP_EXTEND=skip_extend,

@@ -1,0 +1,17 @@
+doc=300 prefill: max abs err 0.0089
+doc=300 decode step 0: max abs err 0.0012
+doc=300 decode step 1: max abs err 0.0012
+doc=300 decode step 2: max abs err 0.0011
+doc=300 decode step 3: max abs err 0.0012
+doc=1000 prefill: max abs err 0.0088
+doc=1000 decode step 0: max abs err 0.0008
+doc=1000 decode step 1: max abs err 0.0007
+doc=1000 decode step 2: max abs err 0.0007
+doc=1000 decode step 3: max abs err 0.0007
+doc=37 prefill: max abs err 0.0083
+doc=37 decode step 0: max abs err 0.0041
+doc=37 decode step 1: max abs err 0.0043
+doc=37 decode step 2: max abs err 0.0039
+doc=37 decode step 3: max abs err 0.0042
+worst max abs err 0.0089
+check_kernel: passed

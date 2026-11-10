@@ -1,0 +1,27 @@
+{
+ "engine": "sglang 0.5.22 + ParallelPromptEngine",
+ "cache_flushed": true,
+ "parallel_size": 0,
+ "parallel_size_fixed": false,
+ "warm_pass": "full",
+ "compact_finished": true,
+ "prefix_hit_tokens": 1212,
+ "doc_tokens": 1908035,
+ "calib_s": {
+  "4": 316.3091018840205,
+  "8": 282.2960744439624,
+  "16": 273.0798348149983,
+  "0": 237.81229039502796
+ },
+ "label": "pp-radix",
+ "config": "pp-radix",
+ "dataset": "loogle",
+ "model": "Qwen/Qwen2.5-7B-Instruct",
+ "pass_index": 1,
+ "wall_s": 508.49794846307486,
+ "n": 1761,
+ "output_tokens": 412901,
+ "gpu": "NVIDIA A100-SXM4-80GB",
+ "mem_fraction_static": 0.88,
+ "max_prefill_tokens": 8192
+}

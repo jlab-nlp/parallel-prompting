@@ -1,0 +1,148 @@
+--- a/python/sglang/srt/layers/attention/triton_ops/extend_attention.py
++++ b/python/sglang/srt/layers/attention/triton_ops/extend_attention.py
+@@ -31,6 +31,10 @@
+ 
+ is_hip_ = is_hip()
+ 
++# (min BLOCK_M, BLOCK_N, num_warps) for extends of <= 64 tokens per request;
++# None keeps the default tiles. Tuned with pp_bench/kernel_bench.py.
++SMALL_EXTEND_CONFIG = (16, 128, 4)
++
+ 
+ @triton.jit
+ def tanh(x):
+@@ -51,6 +55,8 @@
+     kv_indices,
+     mask_ptr,
+     mask_offsets,
++    q_sid_ptr,
++    slot_sid_ptr,
+     sm_scale,
+     kv_group_num,
+     stride_qbs,
+@@ -74,6 +80,7 @@
+     BLOCK_M: tl.constexpr,
+     BLOCK_N: tl.constexpr,
+     USE_CUSTOM_MASK: tl.constexpr,
++    USE_STREAM_IDS: tl.constexpr,
+ ):
+     cur_seq = tl.program_id(0)
+     cur_head = tl.program_id(1)
+@@ -97,6 +104,15 @@
+     mask_d = offs_d < Lq
+     mask_dv = offs_dv < Lv
+ 
++    if USE_STREAM_IDS:
++        # Parallel Prompting: key k is visible to query q iff k belongs to the
++        # document (stream -1) or to q's own stream (plus causality in stage 2).
++        sid_q = tl.load(
++            q_sid_ptr + cur_seq_extend_start_idx + cur_block_m * BLOCK_M + offs_m,
++            mask=mask_m,
++            other=-3,
++        )
++
+     offs_q = (
+         (cur_seq_extend_start_idx + cur_block_m * BLOCK_M + offs_m[:, None])
+         * stride_qbs
+@@ -171,6 +187,11 @@
+             )
+             custom_mask &= mask_m[:, None] & mask_n[None, :]
+             qk = tl.where(custom_mask, qk, float("-inf"))
++        elif USE_STREAM_IDS:
++            sid_k = tl.load(slot_sid_ptr + offs_kv_loc, mask=mask_n, other=-2)
++            visible = (sid_k[None, :] == -1) | (sid_k[None, :] == sid_q[:, None])
++            visible &= mask_m[:, None] & mask_n[None, :]
++            qk = tl.where(visible, qk, float("-inf"))
+         else:
+             qk = tl.where(mask_m[:, None] & mask_n[None, :], qk, float("-inf"))
+ 
+@@ -246,6 +267,15 @@
+                 start_n + offs_n[None, :]
+             )
+             mask_causual &= mask_m[:, None] & mask_n[None, :]
++            if USE_STREAM_IDS:
++                sid_k = tl.load(
++                    q_sid_ptr + cur_seq_extend_start_idx + start_n + offs_n,
++                    mask=mask_n,
++                    other=-2,
++                )
++                mask_causual &= (sid_k[None, :] == -1) | (
++                    sid_k[None, :] == sid_q[:, None]
++                )
+             qk = tl.where(mask_causual, qk, float("-inf"))
+ 
+         n_e_max = tl.maximum(tl.max(qk, 1), e_max)
+@@ -292,11 +322,17 @@
+     max_len_extend,
+     sm_scale=None,
+     logit_cap=0.0,
++    q_sid=None,
++    slot_sid=None,
+ ):
+     """
+     q_extend, k_extend, v_extend, o_extend: contiguous tensors
+ 
+     k_buffer, v_buffer: (prefix + extend) tensors in mem_manager
++
++    q_sid, slot_sid: optional Parallel Prompting stream ids (int32), of every
++    extend token and of every KV-pool slot. Used in place of a dense custom
++    mask; the mask is computed in the kernel, with fixed-size inputs.
+     """
+     Lq, Lk, Lv = (
+         q_extend.shape[-1],
+@@ -329,7 +365,16 @@
+             else:
+                 BLOCK_M, BLOCK_N = (32, 64)
+         elif is_cuda_available and CUDA_CAPABILITY[0] >= 8:
+-            if Lq <= 128:
++            # Backported from later sglang: sm86/sm89 has a much smaller shared
++            # memory size (100K) than sm80 (160K)
++            if CUDA_CAPABILITY[1] == 9 or CUDA_CAPABILITY[1] == 6:
++                if Lq <= 128:
++                    BLOCK_M, BLOCK_N = (64, 128)
++                elif Lq <= 256:
++                    BLOCK_M, BLOCK_N = (64, 64)
++                else:
++                    BLOCK_M, BLOCK_N = (32, 32)
++            elif Lq <= 128:
+                 BLOCK_M, BLOCK_N = (128, 128)
+             elif Lq <= 256:
+                 BLOCK_M, BLOCK_N = (64, 64)
+@@ -340,11 +385,20 @@
+ 
+         num_warps = 4 if Lk <= 64 else 8
+ 
++    if SMALL_EXTEND_CONFIG is not None and max_len_extend <= 64 and not is_hip_:
++        # Parallel Prompting decode steps extend each request by only a few
++        # tokens (one per stream); a 64/128-row query tile would be mostly
++        # padding, so size the tile to the extend length.
++        m, BLOCK_N, num_warps = SMALL_EXTEND_CONFIG
++        BLOCK_M = max(m, triton.next_power_of_2(max_len_extend))
++
+     sm_scale = sm_scale or 1.0 / (Lq**0.5)
+     batch_size, head_num = qo_indptr.shape[0] - 1, q_extend.shape[1]
+     kv_group_num = q_extend.shape[1] // k_extend.shape[1]
+ 
+     USE_CUSTOM_MASK = custom_mask is not None
++    USE_STREAM_IDS = q_sid is not None
++    assert not (USE_CUSTOM_MASK and USE_STREAM_IDS)
+ 
+     grid = (batch_size, head_num, triton.cdiv(max_len_extend, BLOCK_M))
+     num_stages = 1
+@@ -365,6 +419,8 @@
+         kv_indices,
+         custom_mask,
+         mask_offsets,
++        q_sid,
++        slot_sid,
+         sm_scale,
+         kv_group_num,
+         q_extend.stride(0),
+@@ -388,6 +444,7 @@
+         Lq=Lq,
+         Lv=Lv,
+         USE_CUSTOM_MASK=USE_CUSTOM_MASK,
++        USE_STREAM_IDS=USE_STREAM_IDS,
+         num_warps=num_warps,
+         num_stages=num_stages,
+         **extra_kargs,

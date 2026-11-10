@@ -1,0 +1,4 @@
+pp-cb-radix 1761 {'f1': 17.33, 'rouge_l': 16.61, 'precision': 11.96, 'recall': 83.6, 'recall>=0.5': 87.39, 'gold_in_pred': 49.29, 'pred_words': 111.9, 'gold_words': 8.84}
+pp-radix 1761 {'f1': 17.36, 'rouge_l': 16.63, 'precision': 12.01, 'recall': 83.61, 'recall>=0.5': 87.34, 'gold_in_pred': 49.29, 'pred_words': 111.48, 'gold_words': 8.84}
+sgl-on 1761 {'f1': 17.29, 'rouge_l': 16.61, 'precision': 11.89, 'recall': 83.41, 'recall>=0.5': 86.94, 'gold_in_pred': 48.61, 'pred_words': 111.57, 'gold_words': 8.84}
+sgl-triton-on 1761 {'f1': 17.41, 'rouge_l': 16.7, 'precision': 12.05, 'recall': 83.77, 'recall>=0.5': 87.56, 'gold_in_pred': 48.55, 'pred_words': 111.42, 'gold_words': 8.84}

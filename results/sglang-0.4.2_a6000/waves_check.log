@@ -1,0 +1,20 @@
+Loading safetensors checkpoint shards:   0% Completed | 0/2 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards:  50% Completed | 1/2 [00:54<00:54, 54.53s/it]
+Loading safetensors checkpoint shards: 100% Completed | 2/2 [03:22<00:00, 109.54s/it]
+Loading safetensors checkpoint shards: 100% Completed | 2/2 [03:22<00:00, 101.33s/it]
+
+WARNING:sglang.srt.layers.attention.triton_ops.decode_attention:The following error message 'operation scheduled before its operands' can be ignored.
+max_total_num_tokens=51465
+== parallel size all  cuda graph True
+streams: 64  exact match: 47/64 (73.4%)
+first divergence (tokens) min/median: 3/19
+{"i": 0, "pp": "Denver Broncos\n\nComment: The question is asking for the name of the NFL team that represented the AFC at Super Bowl 50. The answer is Denver Broncos.</s>", "ref": "Denver Broncos\n\nComment: The question is asking for the name of the NFL team that represented the AFC at Super Bowl 50. The answer is Denver Broncos.</s>", "first_divergence": null}
+{"i": 1, "pp": "Carolina Panthers\n\nComment: The Panthers were the NFC champions.\n\nAnswer: The Panthers were the NFC champions.</s>", "ref": "Carolina Panthers\n\nComment: The Panthers were the NFC champions.</s>", "first_divergence": 16}
+{"i": 2, "pp": "Super Bowl 50 took place at Levi's Stadium in the San Francisco Bay Area at Santa Clara, California.\n\nAnswer:\n\nA) San Francisco, California\nB) Santa Clara, California\nC) Levi's Stadium\nD) San Francisco Bay Area\n\nAnswer: B", "ref": "Super Bowl 50 took place at Levi's Stadium in the San Francisco Bay Area at Santa Clara, California.\n\nAnswer:\n\nA) San Francisco, California\nB) Santa Clara, California\nC) San Jose, California\nD) Oakland, California\n\nAnswer: B)", "first_divergence": 47}
+== parallel size 2  cuda graph True
+streams: 64  exact match: 44/64 (68.8%)
+first divergence (tokens) min/median: 2/23
+{"i": 0, "pp": "Denver Broncos\n\nComment: The question is asking for the name of the NFL team that represented the AFC at Super Bowl 50. The answer is Denver Broncos.</s>", "ref": "Denver Broncos\n\nComment: The question is asking for the name of the NFL team that represented the AFC at Super Bowl 50. The answer is Denver Broncos.</s>", "first_divergence": null}
+{"i": 1, "pp": "Carolina Panthers\n\nComment: The Panthers were the NFC champions.\n\nAnswer: The Panthers were the NFC champions.</s>", "ref": "Carolina Panthers\n\nComment: The Panthers were the NFC champions.</s>", "first_divergence": 16}
+{"i": 2, "pp": "Super Bowl 50 took place at Levi's Stadium in the San Francisco Bay Area at Santa Clara, California.\n\nAnswer:\n\nA) San Francisco, California\nB) Santa Clara, California\nC) Levi's Stadium\nD) San Francisco Bay Area\n\nAnswer: B", "ref": "Super Bowl 50 took place at Levi's Stadium in the San Francisco Bay Area at Santa Clara, California.\n\nAnswer:\n\nA) San Francisco, California\nB) Santa Clara, California\nC) San Jose, California\nD) Oakland, California\n\nAnswer: B)", "first_divergence": 47}
+[rank0]:[W1029 03:26:30.763442811 ProcessGroupNCCL.cpp:1250] Warning: WARNING: process group has NOT been destroyed before we destruct ProcessGroupNCCL. On normal program exit, the application should call destroy_process_group to ensure that any pending NCCL operations have finished in this process. In rare cases this process can exit before this point and block the progress of another member of the process group. This constraint has always been present,  but this warning has only been added since PyTorch 2.4 (function operator())

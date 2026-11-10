@@ -1,0 +1,16 @@
+{
+ "engine": "sglang 0.5.22",
+ "cache_flushed": true,
+ "max_running_requests": "sglang default",
+ "label": "sgl-triton-on",
+ "config": "sgl-triton-on",
+ "dataset": "loogle",
+ "model": "Qwen/Qwen2.5-7B-Instruct",
+ "pass_index": 1,
+ "wall_s": 567.939474556013,
+ "n": 1761,
+ "output_tokens": 412280,
+ "gpu": "NVIDIA A100-SXM4-80GB",
+ "mem_fraction_static": 0.88,
+ "max_prefill_tokens": null
+}

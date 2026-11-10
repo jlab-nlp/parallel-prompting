@@ -1,0 +1,29 @@
+--- a/python/sglang/srt/layers/logits_processor.py
++++ b/python/sglang/srt/layers/logits_processor.py
+@@ -72,6 +72,8 @@
+     extend_logprob_start_lens_cpu: Optional[List[int]] = None
+     extend_logprob_pruned_lens_cpu: Optional[List[int]] = None
+     top_logprobs_nums: Optional[List[int]] = None
++    # Parallel Prompting: explicit rows of the extend hidden states to keep.
++    logit_index: Optional[torch.Tensor] = None
+ 
+     @classmethod
+     def from_forward_batch(cls, forward_batch: ForwardBatch):
+@@ -102,6 +104,7 @@
+             extend_logprob_start_lens_cpu=forward_batch.extend_logprob_start_lens_cpu,
+             extend_logprob_pruned_lens_cpu=extend_logprob_pruned_lens_cpu,
+             top_logprobs_nums=forward_batch.top_logprobs_nums,
++            logit_index=getattr(forward_batch.spec_info, "logit_index", None),
+         )
+ 
+ 
+@@ -141,6 +144,9 @@
+         ):
+             pruned_states = hidden_states
+             sample_indices = None
++        elif logits_metadata.logit_index is not None:
++            pruned_states = hidden_states[logits_metadata.logit_index]
++            sample_indices = None
+         elif (
+             logits_metadata.forward_mode.is_extend()
+             and not logits_metadata.extend_return_logprob

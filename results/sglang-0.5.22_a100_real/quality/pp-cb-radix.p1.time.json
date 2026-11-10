@@ -1,0 +1,27 @@
+{
+ "engine": "sglang 0.5.22 + ContinuousPPEngine",
+ "cache_flushed": true,
+ "parallel_size": 0,
+ "parallel_size_fixed": false,
+ "warm_pass": "full",
+ "compact_finished": true,
+ "prefix_hit_tokens": 1946,
+ "doc_tokens": 658674,
+ "calib_s": {
+  "4": 24.93246973492205,
+  "8": 25.78723545698449,
+  "16": 27.005360421957448,
+  "0": 22.41986573592294
+ },
+ "label": "pp-cb-radix",
+ "config": "pp-cb-radix",
+ "dataset": "quality",
+ "model": "Qwen/Qwen2.5-7B-Instruct",
+ "pass_index": 1,
+ "wall_s": 73.75274739402812,
+ "n": 2086,
+ "output_tokens": 33313,
+ "gpu": "NVIDIA A100-SXM4-80GB",
+ "mem_fraction_static": 0.88,
+ "max_prefill_tokens": 8192
+}

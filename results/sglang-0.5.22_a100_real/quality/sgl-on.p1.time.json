@@ -1,0 +1,16 @@
+{
+ "engine": "sglang 0.5.22",
+ "cache_flushed": true,
+ "max_running_requests": "sglang default",
+ "label": "sgl-on",
+ "config": "sgl-on",
+ "dataset": "quality",
+ "model": "Qwen/Qwen2.5-7B-Instruct",
+ "pass_index": 1,
+ "wall_s": 133.32662035198882,
+ "n": 2086,
+ "output_tokens": 33312,
+ "gpu": "NVIDIA A100-SXM4-80GB",
+ "mem_fraction_static": 0.88,
+ "max_prefill_tokens": null
+}
