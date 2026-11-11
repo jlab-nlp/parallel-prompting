@@ -2,7 +2,7 @@
 
 Zekun Zhao, Jeffrey Flanigan · University of California, Santa Cruz
 
-[Paper](#citation) · [Project page](https://jlab-nlp.github.io/parallel-prompting/)
+[Paper (PDF)](docs/paper.pdf) · [Project page](https://jlab-nlp.github.io/parallel-prompting/)
 
 When many independent questions are asked about the same long document, prefix
 caching stores the document's KV cache once, but every decode step still reads it
@@ -133,6 +133,7 @@ answer tokens.
   title  = {Read Once, Answer Many: Parallel Prompting for Shared-Context {LLM} Inference},
   author = {Zekun Zhao and Jeffrey Flanigan},
   year   = {2026},
+  url    = {https://jlab-nlp.github.io/parallel-prompting/paper.pdf},
 }
 ```
 
